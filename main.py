@@ -1,10 +1,12 @@
 import flet as ft
 import aiohttp
 import asyncio
+import time
 
 # Token de autenticação atualizado
 TOKEN = "RytmH5pJHn6kAFQi2HRpSaGh0og8V0LW"
 table_id = 338693
+polling_interval = 10  # Intervalo de tempo em segundos para verificar atualizações
 
 # Função assíncrona para buscar os dados de uma linha específica
 async def fetch_movie_data(session, row_id):
@@ -18,8 +20,8 @@ async def fetch_movie_data(session, row_id):
             data = await response.json()
             nome = data.get('Nome', '')
             capa = data.get('Capa', '')
-            video_link = data.get('Link', '')  # Substitua 'Link' pelo nome exato do campo do vídeo na sua tabela
-            sinopse = data.get('Sinopse', '')  # Substitua 'Sinopse' pelo nome exato do campo da sinopse na sua tabela
+            video_link = data.get('Link', '')
+            sinopse = data.get('Sinopse', '')
             return nome, capa, video_link, sinopse
         else:
             return "", "", "", ""
@@ -30,13 +32,13 @@ async def load_movies():
     
     async with aiohttp.ClientSession() as session:
         tasks = []
-        for i in range(1, 803):
+        for i in range(1, 803):  # Ajuste o intervalo conforme necessário
             task = asyncio.ensure_future(fetch_movie_data(session, i))
             tasks.append(task)
         movies_data = await asyncio.gather(*tasks)
 
     for nome, capa, video_link, sinopse in movies_data:
-        if nome and capa and video_link:  # Só adiciona filmes com nome, capa e link de vídeo válidos
+        if nome and capa and video_link:
             movies.append((nome, capa, video_link, sinopse))
     
     return movies
@@ -44,13 +46,19 @@ async def load_movies():
 def main(page: ft.Page):
     page.theme_mode = "dark"
     page.padding = 0
-    page.window.width = 450
-    page.window.min_width = 450
-    page.window.max_width = 450
-    page.window.height = 700
-    page.window.min_height = 700
-    page.window.max_height = 700
     page.title = "MovieX"
+
+    movie_controls = ft.Row(spacing=10, wrap=True, scroll="auto")
+
+    async def update_movies():
+        while True:
+            movies = await load_movies()
+            movie_controls.controls.clear()
+            movie_controls.controls.extend(
+                create_movie_card(movie[0], movie[1], movie[2], movie[3]) for movie in movies
+            )
+            page.update()
+            await asyncio.sleep(polling_interval)
 
     def navigate_to_video_page(movie_name, video_playlist, sinopse):
         def go_back(e):
@@ -69,19 +77,20 @@ def main(page: ft.Page):
                     bgcolor="#2A2A48",
                 ),
                 ft.Container(
-                    #padding=20,
-                    width=450,
-                    height=300,
+                    expand=True,
                     content=ft.Column(
+                        scroll="auto",
                         horizontal_alignment="center",
                         controls=[
                             ft.Video(
+                                title=movie_name,
                                 playlist=video_playlist,
+                                fit=ft.ImageFit.COVER,
                                 playlist_mode=ft.PlaylistMode.LOOP,
                                 fill_color=ft.colors.BLACK87,
                                 aspect_ratio=16/9,
                                 volume=100,
-                                autoplay=False,
+                                autoplay=True,
                                 filter_quality=ft.FilterQuality.HIGH,
                                 muted=False,
                                 on_loaded=lambda e: print("Video loaded successfully!"),
@@ -89,18 +98,15 @@ def main(page: ft.Page):
                                 on_exit_fullscreen=lambda e: print("Video exited fullscreen!"),
                             ),
                             ft.Text(movie_name, size=32, color="White", text_align="center", weight="bold"),
-                            ft.Divider(
-                                color="grey"
-                            ),
+                            ft.Divider(color="grey"),
                             ft.Container(
-                                #padding=ft.padding.only(top=30),
                                 content=ft.Row(
-                                        wrap=True,
-                                        controls=[
-                                            ft.Text("Sinopse: ",color="white",weight="w600",text_align="center"),
-                                            ft.Text(value=f"{sinopse}", no_wrap=False, color="White")
-                                        ]
-                                    )
+                                    wrap=True,
+                                    controls=[
+                                        ft.Text("Sinopse: ", color="white", weight="w600", text_align="center"),
+                                        ft.Text(value=f"{sinopse}", no_wrap=False, color="White")
+                                    ]
+                                )
                             )
                         ]
                     )
@@ -111,7 +117,7 @@ def main(page: ft.Page):
         page.go("/video")
 
     def create_movie_card(movie_name, image_url, video_link, sinopse):
-        video_playlist = [ft.VideoMedia(resource=video_link)]
+        video_playlist = [ft.VideoMedia(resource=video_link, extras={image_url: "https://image.tmdb.org/t/p/w185/w05T2c3jLhLCHa0lFMuxH4kDwua.jpg"})]
         return ft.Container(
             content=ft.Column(
                 [
@@ -134,10 +140,8 @@ def main(page: ft.Page):
             on_click=lambda e: navigate_to_video_page(movie_name, video_playlist, sinopse)
         )
 
-    async def initialize_movies():
-        movies = await load_movies()
-
-        _main_cont = ft.Container(
+    page.add(
+        ft.Container(
             expand=True,
             padding=20,
             bgcolor="#1f1f36",
@@ -145,22 +149,14 @@ def main(page: ft.Page):
                 horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                 controls=[
                     ft.Text("Filmes", color="white", weight="bold", size=25, font_family="MontSerrat"),
-                    ft.Row(
-                        spacing=10,
-                        wrap=True,
-                        controls=[
-                            create_movie_card(movie[0], movie[1], movie[2], movie[3]) for movie in movies
-                        ],
-                        scroll="auto"
-                    ),
+                    movie_controls,
                 ],
                 scroll="auto"
             ),
         )
-        page.add(_main_cont)
+    )
 
-    asyncio.run(initialize_movies())
+    asyncio.run(update_movies())
 
 if __name__ == '__main__':
-    ft.app(target=main, assets_dir="assets",view=ft.AppView.WEB_BROWSER)
-    
+    ft.app(target=main, assets_dir="assets")
